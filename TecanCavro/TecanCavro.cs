@@ -24,7 +24,7 @@ namespace TecanCavroControl
         {
             this.address = address;
         }
-        
+
         public void Connect()
         {
             if (isConnected)
@@ -39,6 +39,7 @@ namespace TecanCavroControl
                     serialPort.DiscardOutBuffer();
                     Response response = SendReceive("Q");
                     isConnected = true;
+                    return;
                 }
                 catch { serialPort.Close(); }
             }
@@ -77,13 +78,12 @@ namespace TecanCavroControl
 
         public void Initialize()
         {
-            ErrorCode status = SendReceive("Q").status;
-            while (status == ErrorCode.DeviceNotInitialized)
+            ErrorCode status;
+            do
             {
                 WaitForReady();
-                Response response = SendReceive("Z0,0,0R");
-                status = SendReceive("Q").status;
-            }
+                status = SendReceive("Z0,0,0R").status;
+            } while (status == ErrorCode.DeviceNotInitialized);
         }
 
         public void SetSpeed(ushort speed)
