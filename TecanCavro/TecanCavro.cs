@@ -25,6 +25,7 @@ namespace TecanCavroControl
             this.address = address;
         }
 
+        #region Public Control Methods
         public void Connect()
         {
             if (isConnected)
@@ -35,6 +36,7 @@ namespace TecanCavroControl
                 try
                 {
                     serialPort.Open();
+                    serialPort.ReadTimeout = 100;
                     serialPort.DiscardInBuffer();
                     serialPort.DiscardOutBuffer();
                     Response response = SendReceive("Q");
@@ -52,30 +54,7 @@ namespace TecanCavroControl
             serialPort?.Close();
             serialPort?.Dispose();
         }
-
-        private Response SendReceive(string request)
-        {
-            string formattedRequest = "/" + address.ToString() + request + "\r";
-            serialPort.ReadTimeout = 100;
-            return new Response(serialPort.SendReceive(formattedRequest));
-        }
-
-        private void WaitForReady()
-        {
-            bool isReady = SendReceive("Q").isReady;
-            while (!isReady)
-            {
-                Thread.Sleep(500);
-                isReady = SendReceive("Q").isReady;
-            }
-        }
-
-        private void CheckResponse(Response response)
-        {
-            if (response.status != ErrorCode.NoError)
-                throw new Exception(response.status.ToString());
-        }
-
+        
         public void Initialize()
         {
             ErrorCode status;
@@ -107,6 +86,29 @@ namespace TecanCavroControl
             if (position > 3000) { position = 3000; }
             Response response = SendReceive("A" + position.ToString() + "R");
             CheckResponse(response);
+        }
+        #endregion
+
+        private void WaitForReady()
+        {
+            bool isReady = SendReceive("Q").isReady;
+            while (!isReady)
+            {
+                Thread.Sleep(500);
+                isReady = SendReceive("Q").isReady;
+            }
+        }
+
+        private void CheckResponse(Response response)
+        {
+            if (response.status != ErrorCode.NoError)
+                throw new Exception(response.status.ToString());
+        }
+
+        private Response SendReceive(string request)
+        {
+            string formattedRequest = "/" + address.ToString() + request + "\r";
+            return new Response(serialPort.SendReceive(formattedRequest));
         }
 
         private class Response
