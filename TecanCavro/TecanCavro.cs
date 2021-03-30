@@ -4,25 +4,65 @@ using System.Text;
 using System.Threading;
 using System.IO.Ports;
 using SerialPortExtension.SendReceive;
+using System.Diagnostics;
 
 namespace TecanCavroControl
 {
+    public enum ValvePosition : int
+    {
+        pos1 = 1, pos2, pos3
+    }
+
+    public enum SyringeSize : int
+    {
+        s50 = 50, s100 = 100, s250 = 250, s500 = 500,
+        s1000 = 1000, s2500 = 2500, s5000 = 5000
+    }
+
+    public enum ErrorCode : int
+    {
+        NoError = 0, Initialization = 1, InvalidCommand = 2, InvalidOperand = 3,
+        InvalidCommandSequence = 4, Unused = 5, EEPROMFailure = 6, DeviceNotInitialized = 7,
+        PlungerOverload = 9, ValveOverload = 10, PlungerMoveNotAllowed = 11, CommandOverflow = 15
+    }
+
+    public enum Address
+    {
+        a0 = 0x31,
+        a1 = 0x32,
+        a2 = 0x33,
+        a3 = 0x34,
+        a4 = 0x35,
+        a5 = 0x36,
+        a6 = 0x37,
+        a7 = 0x38,
+        a8 = 0x39,
+        a9 = 0x3A,
+        aA = 0x3B,
+        aB = 0x3C,
+        aC = 0x3D,
+        aD = 0x3E,
+        aE = 0x3F
+    }
+
     public class TecanCavro
     {
         private SerialPort serialPort;
-        private readonly int address;
-        public bool isConnected { get; private set; } = false;
-        public enum ValvePosition : int { pos1 = 1, pos2, pos3 };
-        public enum ErrorCode : int
+        private readonly Address address;
+        private readonly SyringeSize syringeSize;
+        private char ASCIIAddress
         {
-            NoError = 0, Initialization = 1, InvalidCommand = 2, InvalidOperand = 3,
-            InvalidCommandSequence = 4, Unused = 5, EEPROMFailure = 6, DeviceNotInitialized = 7,
-            PlungerOverload = 9, ValveOverload = 10, PlungerMoveNotAllowed = 11, CommandOverflow = 15
-        };
-
-        public TecanCavro(int address = 1)
+            get
+            {
+                return Convert.ToChar(Convert.ToUInt32(address));
+            }
+        }
+        public bool isConnected { get; private set; } = false;
+        
+        public TecanCavro(Address address = Address.a0, SyringeSize syringeSize = SyringeSize.s250)
         {
             this.address = address;
+            this.syringeSize = syringeSize;
         }
 
         #region Public Control Methods
@@ -76,8 +116,30 @@ namespace TecanCavroControl
         public void SetValvePosition(ValvePosition valvePosition)
         {
             WaitForReady();
-            Response response = SendReceive("I" + valvePosition.ToString() + "R");
-            CheckResponse(response);
+            ValvePosition vp = GetValvePosition();
+            if (vp != valvePosition)
+            {
+                Response response = SendReceive("I" + valvePosition.ToString("D") + "R");
+                CheckResponse(response);
+            }
+        }
+
+        public ValvePosition GetValvePosition()
+        {
+            Response response = SendReceive("?6");
+            string hex = response.data[0];
+            char pos = Convert.ToChar(Convert.ToInt32(hex, 16));
+            switch (pos)
+            {
+                case '1':
+                    return ValvePosition.pos1;
+                case '2':
+                    return ValvePosition.pos2;
+                case '3':
+                    return ValvePosition.pos3;
+                default:
+                    throw new Exception(response.data[0]);
+            }
         }
 
         public void SetAbsolutePosition(ushort position)
@@ -91,11 +153,13 @@ namespace TecanCavroControl
 
         private void WaitForReady()
         {
-            bool isReady = SendReceive("Q").isReady;
-            while (!isReady)
+            Response response = SendReceive("Q");
+            Debug.WriteLine(response);
+            while (!response.isReady)
             {
                 Thread.Sleep(500);
-                isReady = SendReceive("Q").isReady;
+                response = SendReceive("Q");
+                Debug.WriteLine(response);
             }
         }
 
@@ -107,14 +171,14 @@ namespace TecanCavroControl
 
         private Response SendReceive(string request)
         {
-            string formattedRequest = "/" + address.ToString() + request + "\r";
+            string formattedRequest = "/" + ASCIIAddress + request + "\r";
             return new Response(serialPort.SendReceive(formattedRequest));
         }
 
         private class Response
         {
             public readonly ErrorCode status;
-            public readonly string[] data;
+            public readonly string[] data = new string[] { };
             public readonly string hexString;
             public readonly bool isReady;
 
@@ -128,8 +192,6 @@ namespace TecanCavroControl
                 int dataLength = hexCharacters.Length - 3;
                 if (dataLength > 0)
                     data = hexCharacters.Skip(3).Take(dataLength).ToArray();
-                else
-                    data = new string[] { };
             }
 
             private static ErrorCode GetStatus(string hexCharacter)
